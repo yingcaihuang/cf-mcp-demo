@@ -15,6 +15,10 @@ worker-configuration.d.ts
 .env
 .env.*
 
+# scripts/deploy.sh 生成的临时密钥文件。正常情况下脚本退出即删除，
+# 这条规则是为了防止脚本被强制终止后残留的文件被误提交。
+.secrets.deploy.*.json
+
 # 日志
 *.log
 npm-debug.log*

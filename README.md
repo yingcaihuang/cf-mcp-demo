@@ -125,34 +125,58 @@ Cloudflare 会克隆仓库到你的 GitHub 账号、构建并部署，密钥加�
 
 注意 Deploy 按钮要求源仓库是**公开**的，且只支持 github.com / gitlab.com（不支持自建实例）。
 
-### 方式二：命令行
+### 方式二：命令行（首次部署用部署脚本）
 
 ```bash
-npm install          # postinstall 会生成 worker-configuration.d.ts
+npm install                      # postinstall 会生成 worker-configuration.d.ts
 npx wrangler login
 
-# 核对网关地址（官方 OpenAPI spec 里 servers 为空，未给出实际域名）
-# 按需修改 wrangler.jsonc 的 vars.RACORE_API_BASE_URL
+cp .dev.vars.example .dev.vars   # 填入真实 AK/SK
+chmod 600 .dev.vars
 
-# 交互式录入密钥，值不会出现在命令行历史里
-npx wrangler secret put RACORE_ACCESS_KEY
-npx wrangler secret put RACORE_SECRET_KEY
-
-npm run deploy
+npm run deploy:secrets           # 部署并同时上传密钥
 ```
 
-### 密钥必须先于部署存在
+密钥写在 `.dev.vars`（已被 `.gitignore` 忽略）。如果账号较多不想每次交互选择：
 
-`secrets.required` 会让 `wrangler deploy` 在密钥未配置时直接失败并列出缺失项，
-不会部署出一个运行时才报 401 的版本：
+```bash
+CLOUDFLARE_ACCOUNT_ID=<你的账号 ID> npm run deploy:secrets
+```
+
+之后只改代码时，直接 `npm run deploy` 即可，密钥已在 Worker 上。
+
+### 为什么首次部署需要专门的脚本
+
+`secrets.required` 会让 `wrangler deploy` 在密钥未配置时失败，这是刻意的保护 ——
+避免部署出一个运行时才报错的版本。但**首次**部署会陷入一个循环：
 
 ```
 ✘ [ERROR] The following required secrets have not been set: RACORE_ACCESS_KEY, RACORE_SECRET_KEY
+  This Worker does not exist yet, so secrets cannot be set in advance with
+  `wrangler secret put`.
 ```
 
-密钥是挂在 **Worker** 上的，与代码部署相互独立，配置一次即在后续所有部署中保留。
-用 Workers Builds（git 推送触发构建）时，先用上面的 `wrangler secret put`
-或在控制台 **Worker → Settings → Variables and Secrets** 添加，再重新触发构建。
+Worker 还不存在，`wrangler secret put` 无处可写；而 deploy 又因缺密钥而拒绝执行。
+出路是 `wrangler deploy --secrets-file`，在部署的同一次请求里提交密钥，
+这正是 `scripts/deploy.sh` 做的事。
+
+脚本没有直接把 `.dev.vars` 交给 `--secrets-file`，而是先解析再生成临时 JSON，
+规避两个坑：
+
+- **引号**：dotenv 的值常写成 `KEY="value"`。若引号被当成值的一部分，
+  签名会静默算错，得到一个很难定位的 401。脚本显式剥离引号。
+- **误传明文变量**：`.dev.vars` 里可能还有 `RACORE_API_BASE_URL` 之类的项，
+  一旦被当作 secret 上传，就会与 `wrangler.jsonc` 的 `vars` 同名冲突。
+  脚本只挑 `secrets.required` 里声明的名字，其余会打印出来告知已忽略。
+
+临时 JSON 权限为 600，脚本退出时（含失败与中断）由 `trap` 覆写并删除；
+`.gitignore` 里也加了 `.secrets.deploy.*.json` 兜底，防止强制终止后残留被误提交。
+密钥值不会出现在命令行参数、标准输出或 shell 历史中。
+
+> `npm run deploy` 保持为纯 `wrangler deploy`，**不要**改成部署脚本 ——
+> Workers Builds 会自动采用 package.json 里的 `deploy` 作为 CI 部署命令，
+> 而 CI 环境没有 `.dev.vars`。走 Workers Builds 时，先用本脚本或控制台
+> （**Worker → Settings → Variables and Secrets**）把密钥配好，再推送触发构建。
 
 > ⚠️ `wrangler.jsonc` 的 `name` 必须与 Cloudflare 上实际的 Worker 名称一致。
 > 不一致时 Workers Builds 会以 CI 侧的名字为准并告警，而本地

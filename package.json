@@ -33,6 +33,7 @@
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:secrets": "bash scripts/deploy.sh",
     "dry-run": "wrangler deploy --dry-run --outdir dist",
     "typecheck": "wrangler types && tsc --noEmit",
     "cf-typegen": "wrangler types"
