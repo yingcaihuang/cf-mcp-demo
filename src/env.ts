@@ -1,11 +1,8 @@
-/** 签名中 request_timestamp 的格式模式 */
-export type SignatureTimestampMode = "rfc1123" | "unix";
-
 /**
  * 运行时环境。绑定的「名字」以 wrangler.jsonc 为唯一来源，这里的类型只是
  * 对运行时实际取值做放宽，原因有两个：
  *
- * 1. wrangler types 会把 vars 生成为字面量类型（例如 "rfc1123"），但这些值
+ * 1. wrangler types 会把 vars 生成为字面量类型（例如具体的 URL），但这些值
  *    可以在 dashboard 或 `--var` 里被改成别的字符串，按字面量处理会导致
  *    正常的取值比较被判成不可能分支。
  * 2. 密钥虽然在 wrangler.jsonc 里声明为必需，本地开发或漏配时仍可能缺失。
@@ -17,10 +14,8 @@ export interface Env {
   RACORE_ACCESS_KEY?: string;
   /** Racore secret_key（密钥，部署向导或 wrangler secret 录入） */
   RACORE_SECRET_KEY?: string;
-  /** API 网关地址，默认 https://api.racorecloud.com */
+  /** API 网关地址，默认 https://portal.racorecloud.com */
   RACORE_API_BASE_URL?: string;
-  /** 签名时间戳格式，默认 rfc1123 */
-  RACORE_SIGNATURE_TIMESTAMP_MODE?: string;
 }
 
 /**
@@ -38,7 +33,11 @@ type AssertNoDrift = [MissingBindings] extends [never]
 const _assertNoDrift: AssertNoDrift = true;
 void _assertNoDrift;
 
-export const DEFAULT_API_BASE_URL = "https://api.racorecloud.com";
+/**
+ * 实测确认可用的网关地址。api.racorecloud.com 的 HTTP 层不响应，
+ * 本机与 Cloudflare 边缘均超时，不要改回去。
+ */
+export const DEFAULT_API_BASE_URL = "https://portal.racorecloud.com";
 
 /**
  * 读取并校验运行时配置。缺少密钥时立即抛错，避免把 undefined 拼进签名后
@@ -48,7 +47,6 @@ export function resolveConfig(env: Env): {
   accessKey: string;
   secretKey: string;
   baseUrl: string;
-  timestampMode: SignatureTimestampMode;
 } {
   const accessKey = env.RACORE_ACCESS_KEY;
   const secretKey = env.RACORE_SECRET_KEY;
@@ -64,15 +62,10 @@ export function resolveConfig(env: Env): {
     );
   }
 
-  const mode = env.RACORE_SIGNATURE_TIMESTAMP_MODE;
-  const timestampMode: SignatureTimestampMode =
-    mode === "unix" || mode === "rfc1123" ? mode : "rfc1123";
-
   return {
     accessKey,
     secretKey,
     // 去掉末尾斜杠，避免拼接出 //API/...
     baseUrl: (env.RACORE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, ""),
-    timestampMode,
   };
 }

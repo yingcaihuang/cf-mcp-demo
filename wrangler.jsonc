@@ -16,15 +16,10 @@
   // 明文环境变量。可安全进版本库，部署向导里也可修改。
   // ───────────────────────────────────────────────────────────────────
   "vars": {
-    // Racore OpenAPI 的网关地址。官方文档的 OpenAPI spec 里 servers 为空，
-    // 请按控制台/客户经理提供的实际地址确认后修改。
-    "RACORE_API_BASE_URL": "https://api.racorecloud.com",
-
-    // 计算签名时 request_timestamp 的格式：
-    //   "rfc1123" —— 与 x-request-date 请求头完全一致（默认，贴合文档措辞）
-    //   "unix"    —— Unix 秒级时间戳字符串
-    // 首次鉴权若因签名失败被拒，代码会自动用另一种格式重试一次。
-    "RACORE_SIGNATURE_TIMESTAMP_MODE": "rfc1123"
+    // Racore OpenAPI 的网关地址。已实测确认：portal.racorecloud.com 可正常
+    // 鉴权并返回数据；api.racorecloud.com 虽然 TCP 443 开放，但 HTTP 层不响应
+    // （本机与 Cloudflare 边缘均超时），不要改回去。
+    "RACORE_API_BASE_URL": "https://portal.racorecloud.com"
   },
 
   // ───────────────────────────────────────────────────────────────────

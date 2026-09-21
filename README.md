@@ -72,7 +72,6 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 | 配置项 | 类型 | 声明位置 | 说明 |
 | --- | --- | --- | --- |
 | `RACORE_API_BASE_URL` | 明文变量 | `wrangler.jsonc` → `vars` | Racore API 网关地址 |
-| `RACORE_SIGNATURE_TIMESTAMP_MODE` | 明文变量 | `wrangler.jsonc` → `vars` | 签名时间戳格式，`rfc1123` 或 `unix` |
 | `RACORE_ACCESS_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore access_key |
 | `RACORE_SECRET_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore secret_key |
 
@@ -248,11 +247,15 @@ Streamable HTTP 端点是 `POST https://<your-worker>.workers.dev/mcp`。
 即 HMAC-SHA512、密钥为 sk、消息为三者拼接、输出小写 hex。已用 Node `crypto.createHmac`
 作为参照验证过 WebCrypto 实现与 PHP `hash_hmac` 逐字节一致。
 
-**签名时间戳格式的歧义处理**：请求头 `x-request-date` 是 RFC1123 格式，但签名参数叫
-`request_timestamp`，文档未明确二者是否同一个值。因此代码默认按 RFC1123
-（贴合文档"传入计算签名时所用的 x-request-date 值"的措辞），**若被拒则自动用 Unix
-秒级时间戳重试一次**，并记住成功的格式供后续复用。确认实际格式后，可通过
-`RACORE_SIGNATURE_TIMESTAMP_MODE` 固定为 `rfc1123` 或 `unix` 以省掉一次试错。
+**签名里的时间戳就是 `x-request-date` 本身**。文档把该参数写作 `request_timestamp`，
+容易误读成 Unix 时间戳，实际是 RFC1123 字符串，与请求头完全一致。这一点由官方
+Python 示例（`datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')`）与真实接口
+实测双重确认 —— 传 Unix 秒级时间戳会得到 `401 Invalid parameter signature`。
+早期版本曾为此保留一条自动回退逻辑，现已删除：它会把连通性故障误报成
+「两种签名时间戳格式均鉴权失败」，掩盖真正的原因。
+
+**网关地址**：必须是 `https://portal.racorecloud.com`。`api.racorecloud.com` 的
+TCP 443 虽然开放，但 HTTP 层不响应，本机与 Cloudflare 边缘实测均为超时。
 
 **token 缓存**：模块级内存缓存，作用域为当前 isolate，含并发去重和提前 5 分钟过期。
 token 有效期 24 小时，最坏情况只是每个新 isolate 多做一次鉴权。收到 401/403 会作废

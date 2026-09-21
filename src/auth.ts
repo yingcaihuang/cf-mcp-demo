@@ -1,8 +1,4 @@
-import {
-  resolveConfig,
-  type Env,
-  type SignatureTimestampMode,
-} from "./env.js";
+import { resolveConfig, type Env } from "./env.js";
 
 /** 鉴权接口返回体 */
 interface TokenResponse {
@@ -13,7 +9,7 @@ interface TokenResponse {
     refresh_token: string;
     /** access_token 过期时间，Unix 秒 */
     expire: number;
-    uid: string;
+    uid: number | string;
     username: string;
   };
 }
@@ -22,8 +18,6 @@ interface CachedToken {
   token: string;
   /** Unix 毫秒 */
   expiresAtMs: number;
-  /** 实际成功的签名时间戳格式，后续直接复用，省掉一次试错 */
-  mode: SignatureTimestampMode;
 }
 
 /**
@@ -41,7 +35,11 @@ const EXPIRY_SKEW_MS = 5 * 60 * 1000;
 /** 鉴权请求超时。上游无响应时必须主动放弃，否则工具调用会一直挂住。 */
 const AUTH_TIMEOUT_MS = 15_000;
 
-/** RFC1123 格式，形如 `Fri, 26 Apr 2024 01:46:32 GMT` */
+/**
+ * RFC1123 格式，形如 `Fri, 26 Apr 2024 01:46:32 GMT`。
+ * 等价于官方 Python 示例的
+ * `datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT')`。
+ */
 export function toRfc1123(date: Date): string {
   // toUTCString() 在 workerd / V8 上产出的正是 RFC1123 格式
   return date.toUTCString();
@@ -57,12 +55,14 @@ function toHex(buffer: ArrayBuffer): string {
 }
 
 /**
- * 签名算法（来自文档）：`hash_hmac('sha512', request_timestamp + ak + sk, sk)`
- * 即 HMAC-SHA512，密钥为 sk，消息为三者拼接，输出十六进制小写字符串
- * （PHP hash_hmac 默认输出 hex）。
+ * 签名算法：`hmac_sha512(key=sk, msg=x_request_date + ak + sk)`，输出小写 hex。
+ *
+ * 注意消息里的时间戳就是 `x-request-date` 请求头那个 RFC1123 字符串本身，
+ * 不是 Unix 时间戳 —— 已由官方 Python 示例与真实接口实测双重确认
+ * （用 Unix 秒级时间戳会得到 401 Invalid parameter signature）。
  */
 export async function computeSignature(
-  requestTimestamp: string,
+  requestDate: string,
   accessKey: string,
   secretKey: string,
 ): Promise<string> {
@@ -77,33 +77,30 @@ export async function computeSignature(
   const signature = await crypto.subtle.sign(
     "HMAC",
     cryptoKey,
-    encoder.encode(`${requestTimestamp}${accessKey}${secretKey}`),
+    encoder.encode(`${requestDate}${accessKey}${secretKey}`),
   );
   return toHex(signature);
 }
 
-/** 用指定的时间戳格式做一次鉴权请求 */
+function truncate(text: string, max = 300): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** 发起一次鉴权请求 */
 async function requestToken(
   baseUrl: string,
   accessKey: string,
   secretKey: string,
-  mode: SignatureTimestampMode,
 ): Promise<CachedToken> {
-  const now = new Date();
-  const requestDate = toRfc1123(now);
-  // x-request-date 始终是 RFC1123；签名里用哪种表示由 mode 决定。
-  const signatureTimestamp =
-    mode === "unix" ? String(Math.floor(now.getTime() / 1000)) : requestDate;
-
-  const signature = await computeSignature(
-    signatureTimestamp,
-    accessKey,
-    secretKey,
-  );
+  // x-request-date 与签名里的时间戳必须是同一个字符串，接口要求二者一致，
+  // 且与服务端时间相差不能超过 5 分钟。
+  const requestDate = toRfc1123(new Date());
+  const signature = await computeSignature(requestDate, accessKey, secretKey);
+  const endpoint = `${baseUrl}/API/OAuth/token`;
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/API/OAuth/token`, {
+    response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -115,8 +112,9 @@ async function requestToken(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `无法连接鉴权接口 ${baseUrl}/API/OAuth/token（${reason}）。` +
-        `请确认 RACORE_API_BASE_URL 配置的网关地址正确且可达。`,
+      `无法连接鉴权接口 ${endpoint}（${reason}）。` +
+        `请确认 RACORE_API_BASE_URL 指向 https://portal.racorecloud.com —— ` +
+        `api.racorecloud.com 的 HTTP 层不响应，会表现为连接超时。`,
     );
   }
 
@@ -124,7 +122,7 @@ async function requestToken(
 
   if (!response.ok) {
     throw new Error(
-      `鉴权请求失败 (HTTP ${response.status}, 签名模式 ${mode}): ${truncate(rawBody)}`,
+      `鉴权请求被拒绝 (HTTP ${response.status}) ${endpoint}: ${truncate(rawBody)}`,
     );
   }
 
@@ -139,7 +137,8 @@ async function requestToken(
 
   if (parsed.code !== 1 || !parsed.data?.token) {
     throw new Error(
-      `鉴权被拒绝 (code=${parsed.code}, 签名模式 ${mode}): ${parsed.message ?? "无错误信息"}`,
+      `鉴权失败 (code=${parsed.code}): ${parsed.message ?? "无错误信息"}。` +
+        `请检查 RACORE_ACCESS_KEY / RACORE_SECRET_KEY 是否正确。`,
     );
   }
 
@@ -150,59 +149,30 @@ async function requestToken(
       ? expire * 1000
       : Date.now() + 24 * 60 * 60 * 1000;
 
-  return { token, expiresAtMs, mode };
+  return { token, expiresAtMs };
 }
 
-function truncate(text: string, max = 300): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-/**
- * 获取有效 token。优先命中缓存；未命中时发起鉴权，并在签名格式不确定的情况下
- * 自动用另一种时间戳格式重试一次。
- */
+/** 获取有效 token，优先命中 isolate 内缓存 */
 export async function getAccessToken(
   env: Env,
   options: { forceRefresh?: boolean } = {},
 ): Promise<string> {
-  const { accessKey, secretKey, baseUrl, timestampMode } = resolveConfig(env);
+  const { accessKey, secretKey, baseUrl } = resolveConfig(env);
   const cacheKey = `${baseUrl}|${accessKey}`;
 
-  if (!options.forceRefresh) {
+  if (options.forceRefresh) {
+    tokenCache.delete(cacheKey);
+  } else {
     const cached = tokenCache.get(cacheKey);
     if (cached && cached.expiresAtMs - EXPIRY_SKEW_MS > Date.now()) {
       return cached.token;
     }
-  } else {
-    tokenCache.delete(cacheKey);
   }
 
   const existing = inFlight.get(cacheKey);
   if (existing) return (await existing).token;
 
-  const task = (async (): Promise<CachedToken> => {
-    // 已知成功过的格式优先，否则用配置的格式
-    const preferred = tokenCache.get(cacheKey)?.mode ?? timestampMode;
-    const fallback: SignatureTimestampMode =
-      preferred === "rfc1123" ? "unix" : "rfc1123";
-
-    try {
-      return await requestToken(baseUrl, accessKey, secretKey, preferred);
-    } catch (firstError) {
-      // 文档对 request_timestamp 的表述有歧义（请求头是 RFC1123，参数名却叫
-      // timestamp），所以这里用另一种格式再试一次，避免因格式猜错而完全不可用。
-      try {
-        return await requestToken(baseUrl, accessKey, secretKey, fallback);
-      } catch (secondError) {
-        throw new Error(
-          `两种签名时间戳格式均鉴权失败。` +
-            `${preferred}: ${(firstError as Error).message} | ` +
-            `${fallback}: ${(secondError as Error).message}`,
-        );
-      }
-    }
-  })();
-
+  const task = requestToken(baseUrl, accessKey, secretKey);
   inFlight.set(cacheKey, task);
   try {
     const result = await task;
