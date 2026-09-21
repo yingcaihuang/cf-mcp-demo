@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // 运行时类型来自 `wrangler types` 生成的 worker-configuration.d.ts，
+    // 已取代 @cloudflare/workers-types。这里置空是为了避免 @types/node 的
+    // web globals 与 workerd 运行时类型重复声明。
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    // MCP SDK 的类型声明里引用了 Node 的 Buffer，而本项目不引入 @types/node，
+    // 故跳过依赖包的类型检查。
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true
+    // 注意：不要开启 experimentalDecorators，会破坏 agents SDK 的装饰器行为。
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

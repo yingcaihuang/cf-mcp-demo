@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "racore-cdn-mcp-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // 非敏感配置。AK/SK 不在这里，走 Secrets（见 README）。
+  "vars": {
+    // Racore OpenAPI 的服务端地址。文档的 OpenAPI spec 里 servers 为空，
+    // 请按控制台/客户经理提供的实际网关地址确认后修改。
+    "RACORE_API_BASE_URL": "https://api.racorecloud.com",
+
+    // 计算签名时 request_timestamp 的格式：
+    //   "rfc1123" —— 与 x-request-date 请求头完全一致（默认，贴合文档措辞）
+    //   "unix"    —— Unix 秒级时间戳字符串
+    // 首次鉴权若因签名失败被拒，代码会自动用另一种格式重试一次。
+    "RACORE_SIGNATURE_TIMESTAMP_MODE": "rfc1123"
+  }
+}

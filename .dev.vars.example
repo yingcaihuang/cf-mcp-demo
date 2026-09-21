@@ -1,0 +1,8 @@
+# 本地开发用密钥。复制为 .dev.vars 后填入真实值（.dev.vars 已被 .gitignore 忽略）。
+# 生产环境请改用：npx wrangler secret put RACORE_ACCESS_KEY
+RACORE_ACCESS_KEY="your-access-key"
+RACORE_SECRET_KEY="your-secret-key"
+
+# 可选：覆盖 wrangler.jsonc 里的默认值
+# RACORE_API_BASE_URL="https://api.racorecloud.com"
+# RACORE_SIGNATURE_TIMESTAMP_MODE="rfc1123"
