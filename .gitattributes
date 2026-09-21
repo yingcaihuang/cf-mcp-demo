@@ -15,5 +15,6 @@
 *.jpg binary
 *.ico binary
 
-# 锁文件在 diff / review 中折叠，减少噪音
-package-lock.json -diff linguist-generated=true
+# 锁文件在代码审查里默认折叠以减少噪音，但保留本地 diff 能力
+# （不加 -diff，否则 git diff 会把它当二进制完全不显示）
+package-lock.json linguist-generated=true
