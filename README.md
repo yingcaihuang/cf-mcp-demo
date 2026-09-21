@@ -3,10 +3,10 @@
 把 Racore CDN 的 **Statistic Analysis** 接口封装成远程 MCP Server，部署在 Cloudflare Workers 上。
 AK/SK 存放在 Workers Secrets 中，Worker 内部完成 HMAC-SHA512 签名鉴权与 token 缓存，MCP 客户端不接触密钥。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=<你的-Git-仓库-URL>)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yingcaihuang/cf-mcp-demo)
 
-> 按钮里的 URL 需要替换成本仓库推送后的公开地址（仅支持 github.com / gitlab.com 上的**公开**仓库）。
-> 点击后 Cloudflare 会在部署页面逐项提示填写下面这 5 项配置，无需本地环境、也不用记 CLI 命令。
+> 点击后 Cloudflare 会克隆仓库，并在部署页面逐项提示填写下面这 5 项配置，
+> 无需本地环境、也不用记 CLI 命令。密钥会加密存储为 Worker Secret。
 
 ## 架构
 
@@ -97,9 +97,10 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 
 ### 方式一：Deploy to Cloudflare 按钮（推荐）
 
-把本仓库推送到 GitHub 或 GitLab 的**公开**仓库，替换 README 顶部按钮里的 URL，
-点击后在部署页面填写上面 5 项配置即可。Cloudflare 会克隆仓库、构建、部署，
-密钥加密存储为 Worker Secret。
+直接点击 README 顶部的 **Deploy to Cloudflare** 按钮，在部署页面填写上面 5 项配置即可。
+Cloudflare 会克隆仓库到你的 GitHub 账号、构建并部署，密钥加密存储为 Worker Secret。
+
+注意 Deploy 按钮要求源仓库是**公开**的，且只支持 github.com / gitlab.com（不支持自建实例）。
 
 ### 方式二：命令行
 
