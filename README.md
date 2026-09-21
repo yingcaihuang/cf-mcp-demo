@@ -67,7 +67,7 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 
 ## 配置项
 
-全部 5 项配置都声明在版本库里，部署向导会逐项提示填写。**声明的只有名字，密钥的值不进版本库**。
+全部 4 项配置都声明在版本库里，部署向导会逐项提示填写。**声明的只有名字，密钥的值不进版本库**。
 
 | 配置项 | 类型 | 声明位置 | 说明 |
 | --- | --- | --- | --- |
@@ -75,7 +75,6 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 | `RACORE_SIGNATURE_TIMESTAMP_MODE` | 明文变量 | `wrangler.jsonc` → `vars` | 签名时间戳格式，`rfc1123` 或 `unix` |
 | `RACORE_ACCESS_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore access_key |
 | `RACORE_SECRET_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore secret_key |
-| `MCP_AUTH_TOKEN` | 密钥 | `wrangler.jsonc` → `secrets.required` | 保护 `/mcp` 端点的访问令牌 |
 
 三个文件各司其职，改配置时需要同步：
 
@@ -90,8 +89,33 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 `src/env.ts` 里有一道编译期检查：若在 `wrangler.jsonc` 新增了绑定却忘了同步
 `Env` 接口，`tsc` 会报错并指出缺失的名字，不会静默漂移。
 
-> `MCP_AUTH_TOKEN` 被声明为**必需**，是为了避免部署出一个任何人都能借你 AK/SK
-> 查数据的公开端点。如果你确实需要一个公开端点，从 `secrets.required` 里移除即可。
+## 访问控制
+
+应用层**不做**任何认证，端点保护由 **Cloudflare Access（Cloudflare One）** 在请求到达
+Worker 之前完成。这样认证策略与应用代码解耦，也能复用组织已有的身份源。
+
+> ⚠️ 部署完成后请立即配置 Access 策略。在配置生效之前，`/mcp` 是公开可访问的，
+> 任何知道 URL 的人都能借这个 Worker 的 AK/SK 查询你的 CDN 统计数据。
+
+配置要点：
+
+1. 在 Zero Trust 控制台把 Worker 的域名添加为 **Access 应用**（self-hosted 类型）。
+   建议给 Worker 绑定自定义域，`workers.dev` 子域不便于纳管。
+2. **MCP 客户端是非浏览器程序，无法完成交互式 SSO**，因此需要用
+   [服务令牌（service token）](https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/)
+   而不是邮箱 OTP / IdP 登录。在 Access 策略里添加一条 `Service Auth` 规则允许该令牌。
+3. 客户端请求带上服务令牌的两个请求头：
+
+   ```
+   CF-Access-Client-Id: <client-id>.access
+   CF-Access-Client-Secret: <client-secret>
+   ```
+
+4. `/health` 如果要留给外部监控探测，可在 Access 应用里为该路径单独放行，
+   否则它同样会被 Access 拦截。
+
+若将来需要在应用内再加一层校验（defense in depth），可以验证 Access 注入的
+`Cf-Access-Jwt-Assertion` 请求头中的 JWT。当前代码没有实现这一步。
 
 ## 部署
 
@@ -114,7 +138,6 @@ npx wrangler login
 # 交互式录入密钥，值不会出现在命令行历史里
 npx wrangler secret put RACORE_ACCESS_KEY
 npx wrangler secret put RACORE_SECRET_KEY
-npx wrangler secret put MCP_AUTH_TOKEN     # openssl rand -hex 32 生成
 
 npm run deploy
 ```
@@ -123,7 +146,9 @@ npm run deploy
 不会部署出一个运行时才报错的版本。
 
 部署后访问 `https://<your-worker>.workers.dev/health` 确认，
-其中 `credentials_configured` 与 `auth_required` 都应为 `true`。
+其中 `credentials_configured` 应为 `true`。
+
+**紧接着去配置 Cloudflare Access**，见上文「访问控制」。在策略生效前端点是公开的。
 
 ## 本地开发
 
@@ -154,13 +179,16 @@ npm run dev
 
 Streamable HTTP 端点是 `POST https://<your-worker>.workers.dev/mcp`。
 
+请求头里带 Cloudflare Access 服务令牌（见「访问控制」）：
+
 ```jsonc
 {
   "mcpServers": {
     "racore-cdn": {
       "url": "https://<your-worker>.workers.dev/mcp",
       "headers": {
-        "Authorization": "Bearer <你设置的 MCP_AUTH_TOKEN>"
+        "CF-Access-Client-Id": "<client-id>.access",
+        "CF-Access-Client-Secret": "<client-secret>"
       }
     }
   }
@@ -177,7 +205,8 @@ Streamable HTTP 端点是 `POST https://<your-worker>.workers.dev/mcp`。
       "args": [
         "-y", "mcp-remote",
         "https://<your-worker>.workers.dev/mcp",
-        "--header", "Authorization:Bearer <你设置的 MCP_AUTH_TOKEN>"
+        "--header", "CF-Access-Client-Id:<client-id>.access",
+        "--header", "CF-Access-Client-Secret:<client-secret>"
       ]
     }
   }
@@ -209,8 +238,8 @@ token 有效期 24 小时，最坏情况只是每个新 isolate 多做一次鉴�
 
 ## 已验证项
 
-- `secrets.required` 校验生效：无密钥时 `wrangler dev` 明确列出三个缺失项
-- 类型生成覆盖全部 5 项配置（2 明文变量 + 3 密钥）
+- `secrets.required` 校验生效：无密钥时 `wrangler dev` 明确列出缺失项
+- 类型生成覆盖全部 4 项配置（2 明文变量 + 2 密钥）
 - 编译期防漂移检查生效：往 `wrangler.jsonc` 注入一个未声明的变量后，
   `tsc` 报错并在信息中点出该变量名
 - `wrangler.jsonc` 的 `secrets.required`、`.dev.vars.example` 的键、
@@ -224,7 +253,8 @@ token 有效期 24 小时，最坏情况只是每个新 isolate 多做一次鉴�
 - token 缓存复用：5 次 API 调用只触发 1 次鉴权
 - 签名格式回退：服务端只认 unix 时，客户端从 rfc1123 自动回退成功
 - 参数校验：时间冲突、缺失、区间超 90 天、start/end 不成对均被正确拦截
-- `MCP_AUTH_TOKEN` 生效时，无 token 与错误 token 均返回 401，正确 token 返回 15 个工具
+- 移除应用层鉴权后，`/mcp` 与 `/health` 均可正常响应（认证改由 Cloudflare Access 承担，
+  该环节需在部署后于 Zero Trust 控制台配置，**尚未验证**）
 - UA 双重 URL 解码正确
 - `tsc --noEmit` 无错误，`wrangler deploy --dry-run` 构建通过（214 KiB gzip）
 

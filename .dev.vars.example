@@ -16,6 +16,5 @@ RACORE_ACCESS_KEY=
 # Racore 控制台获取的 secret_key，用于计算 HMAC-SHA512 签名
 RACORE_SECRET_KEY=
 
-# 保护 /mcp 端点的访问令牌。用 `openssl rand -hex 32` 生成一个随机值。
-# 不设置就等于把账号的 CDN 统计数据公开暴露给任何知道 URL 的人。
-MCP_AUTH_TOKEN=
+# 注：访问控制不在这里配置。端点认证由 Cloudflare Access（Cloudflare One）
+# 在 Worker 之前完成，详见 README 的「访问控制」一节。

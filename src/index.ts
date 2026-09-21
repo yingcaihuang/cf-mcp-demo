@@ -22,51 +22,13 @@ function createServer(env: Env): McpServer {
   return server;
 }
 
-/** 恒定时间字符串比较，避免共享密钥被时序攻击逐字节试探 */
-function timingSafeEqual(a: string, b: string): boolean {
-  const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-  // 长度不同直接返回 false，但仍走完循环以减少长度以外的信息泄漏
-  let mismatch = aBytes.length === bBytes.length ? 0 : 1;
-  const max = Math.max(aBytes.length, bBytes.length);
-  for (let i = 0; i < max; i += 1) {
-    mismatch |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
-  }
-  return mismatch === 0;
-}
-
 /**
- * 可选的共享密钥校验。设置了 MCP_AUTH_TOKEN 就强制校验 Authorization 头；
- * 没设置则放行，但该端点等于把账号的 CDN 统计数据公开暴露，务必配置。
+ * 访问控制不在应用层实现，由 Cloudflare Access（Cloudflare One）在请求到达
+ * Worker 之前完成认证。部署后务必为该 Worker 的域名配置 Access 策略，
+ * 否则任何知道 URL 的人都能借账号的 AK/SK 查询 CDN 统计数据。
+ *
+ * 详见 README 的「访问控制」一节。
  */
-function checkAuthorization(request: Request, env: Env): Response | null {
-  const expected = env.MCP_AUTH_TOKEN;
-  if (!expected) return null;
-
-  const header = request.headers.get("Authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  const provided = match?.[1]?.trim();
-
-  if (!provided || !timingSafeEqual(provided, expected)) {
-    return new Response(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        error: { code: -32001, message: "Unauthorized" },
-        id: null,
-      }),
-      {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "WWW-Authenticate": 'Bearer realm="racore-mcp"',
-        },
-      },
-    );
-  }
-  return null;
-}
-
 export default {
   async fetch(
     request: Request,
@@ -81,7 +43,6 @@ export default {
         server: SERVER_NAME,
         version: SERVER_VERSION,
         mcp_endpoint: MCP_ROUTE,
-        auth_required: Boolean(env.MCP_AUTH_TOKEN),
         credentials_configured: Boolean(
           env.RACORE_ACCESS_KEY && env.RACORE_SECRET_KEY,
         ),
@@ -89,9 +50,6 @@ export default {
     }
 
     if (url.pathname === MCP_ROUTE) {
-      const unauthorized = checkAuthorization(request, env);
-      if (unauthorized) return unauthorized;
-
       // 无 notify / subscriptions 需求，因此按官方文档允许的方式在请求内构造 handler，
       // 这是把 env 传给工具实现的最直接做法。
       const handler = createMcpHandler(() => createServer(env), {
@@ -112,6 +70,7 @@ export default {
         `Health check:      ${url.origin}/health`,
         "",
         "对接 Racore CDN Statistic Analysis，共 15 个统计工具。",
+        "访问控制由 Cloudflare Access 在应用之外完成。",
       ].join("\n"),
       { headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );

@@ -17,12 +17,6 @@ export interface Env {
   RACORE_ACCESS_KEY?: string;
   /** Racore secret_key（密钥，部署向导或 wrangler secret 录入） */
   RACORE_SECRET_KEY?: string;
-  /**
-   * MCP 端点访问令牌（密钥）。设置后调用 /mcp 必须带
-   * `Authorization: Bearer <token>`。已在 wrangler.jsonc 中声明为必需，
-   * 以避免部署出一个任何人都能借你 AK/SK 查数据的公开端点。
-   */
-  MCP_AUTH_TOKEN?: string;
   /** API 网关地址，默认 https://api.racorecloud.com */
   RACORE_API_BASE_URL?: string;
   /** 签名时间戳格式，默认 rfc1123 */

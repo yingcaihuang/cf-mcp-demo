@@ -38,6 +38,6 @@
   // 需要在每个环境里重复声明。
   // ───────────────────────────────────────────────────────────────────
   "secrets": {
-    "required": ["RACORE_ACCESS_KEY", "RACORE_SECRET_KEY", "MCP_AUTH_TOKEN"]
+    "required": ["RACORE_ACCESS_KEY", "RACORE_SECRET_KEY"]
   }
 }

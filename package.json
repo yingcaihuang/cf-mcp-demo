@@ -23,9 +23,6 @@
       "RACORE_SECRET_KEY": {
         "description": "Racore 控制台的 **secret_key**。仅用于在 Worker 内部计算 HMAC-SHA512 签名，不会返回给 MCP 客户端。"
       },
-      "MCP_AUTH_TOKEN": {
-        "description": "保护 MCP 端点的访问令牌，用 `openssl rand -hex 32` 生成。**请务必设置**：留空等于让任何知道 Worker URL 的人都能借你的 AK/SK 查询 CDN 数据。连接 MCP 客户端时需在请求头带 `Authorization: Bearer <此令牌>`。"
-      },
       "RACORE_API_BASE_URL": {
         "description": "Racore OpenAPI 的网关地址。官方文档的 OpenAPI spec 未给出该地址，请向 Racore 控制台或客户经理确认后填写。"
       },
