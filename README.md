@@ -3,6 +3,11 @@
 把 Racore CDN 的 **Statistic Analysis** 接口封装成远程 MCP Server，部署在 Cloudflare Workers 上。
 AK/SK 存放在 Workers Secrets 中，Worker 内部完成 HMAC-SHA512 签名鉴权与 token 缓存，MCP 客户端不接触密钥。
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=<你的-Git-仓库-URL>)
+
+> 按钮里的 URL 需要替换成本仓库推送后的公开地址（仅支持 github.com / gitlab.com 上的**公开**仓库）。
+> 点击后 Cloudflare 会在部署页面逐项提示填写下面这 5 项配置，无需本地环境、也不用记 CLI 命令。
+
 ## 架构
 
 ```
@@ -60,51 +65,64 @@ MCP 客户端  ──HTTP──▶  Cloudflare Worker  ──POST /API/OAuth/tok
 - Top URL/Referer/UA 的 `domain` **只支持单个域名**，且 `sorted` 取值各不相同
   （`url_size|url_count` / `referer_size|referer_count` / `ua_size|ua_count`）
 
+## 配置项
+
+全部 5 项配置都声明在版本库里，部署向导会逐项提示填写。**声明的只有名字，密钥的值不进版本库**。
+
+| 配置项 | 类型 | 声明位置 | 说明 |
+| --- | --- | --- | --- |
+| `RACORE_API_BASE_URL` | 明文变量 | `wrangler.jsonc` → `vars` | Racore API 网关地址 |
+| `RACORE_SIGNATURE_TIMESTAMP_MODE` | 明文变量 | `wrangler.jsonc` → `vars` | 签名时间戳格式，`rfc1123` 或 `unix` |
+| `RACORE_ACCESS_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore access_key |
+| `RACORE_SECRET_KEY` | 密钥 | `wrangler.jsonc` → `secrets.required` | Racore secret_key |
+| `MCP_AUTH_TOKEN` | 密钥 | `wrangler.jsonc` → `secrets.required` | 保护 `/mcp` 端点的访问令牌 |
+
+三个文件各司其职，改配置时需要同步：
+
+- **`wrangler.jsonc`** —— 明文变量的值 + 密钥的名字。`secrets.required` 会让
+  `wrangler deploy` 在密钥缺失时直接失败，`wrangler dev` 时给出警告，
+  并且接管 `wrangler types` 的类型生成。
+- **`.dev.vars.example`** —— 部署向导读这里的键名决定提示哪些密钥；也是本地
+  开发的模板（`cp .dev.vars.example .dev.vars`）。
+- **`package.json`** → `cloudflare.bindings` —— 每项配置在向导里显示的说明文字，
+  支持内联 markdown。
+
+`src/env.ts` 里有一道编译期检查：若在 `wrangler.jsonc` 新增了绑定却忘了同步
+`Env` 接口，`tsc` 会报错并指出缺失的名字，不会静默漂移。
+
+> `MCP_AUTH_TOKEN` 被声明为**必需**，是为了避免部署出一个任何人都能借你 AK/SK
+> 查数据的公开端点。如果你确实需要一个公开端点，从 `secrets.required` 里移除即可。
+
 ## 部署
 
-### 1. 安装依赖并登录
+### 方式一：Deploy to Cloudflare 按钮（推荐）
+
+把本仓库推送到 GitHub 或 GitLab 的**公开**仓库，替换 README 顶部按钮里的 URL，
+点击后在部署页面填写上面 5 项配置即可。Cloudflare 会克隆仓库、构建、部署，
+密钥加密存储为 Worker Secret。
+
+### 方式二：命令行
 
 ```bash
-npm install
+npm install          # postinstall 会生成 worker-configuration.d.ts
 npx wrangler login
-```
 
-### 2. 确认 API 网关地址
+# 核对网关地址（官方 OpenAPI spec 里 servers 为空，未给出实际域名）
+# 按需修改 wrangler.jsonc 的 vars.RACORE_API_BASE_URL
 
-官方文档的 OpenAPI spec 里 `servers` 为空，**没有给出实际网关域名**。
-`wrangler.jsonc` 里暂填的是 `https://api.racorecloud.com`，请按控制台或客户经理提供的地址核对后修改：
-
-```jsonc
-"vars": {
-  "RACORE_API_BASE_URL": "https://实际网关地址"
-}
-```
-
-### 3. 写入密钥
-
-AK/SK 走 Workers Secrets，不进代码也不进 `wrangler.jsonc`：
-
-```bash
+# 交互式录入密钥，值不会出现在命令行历史里
 npx wrangler secret put RACORE_ACCESS_KEY
 npx wrangler secret put RACORE_SECRET_KEY
-```
+npx wrangler secret put MCP_AUTH_TOKEN     # openssl rand -hex 32 生成
 
-**强烈建议**再设置一个端点访问令牌。否则任何拿到 Worker URL 的人都能借你的 AK/SK 查询 CDN 数据：
-
-```bash
-# 生成一个随机令牌并写入
-openssl rand -hex 32
-npx wrangler secret put MCP_AUTH_TOKEN
-```
-
-### 4. 部署
-
-```bash
 npm run deploy
 ```
 
-部署后可访问 `https://<your-worker>.workers.dev/health` 确认状态，
-其中 `credentials_configured` 与 `auth_required` 应为 `true`。
+若密钥没配齐，`wrangler deploy` 会因 `secrets.required` 校验而失败并列出缺失项，
+不会部署出一个运行时才报错的版本。
+
+部署后访问 `https://<your-worker>.workers.dev/health` 确认，
+其中 `credentials_configured` 与 `auth_required` 都应为 `true`。
 
 ## 本地开发
 
@@ -190,6 +208,13 @@ token 有效期 24 小时，最坏情况只是每个新 isolate 多做一次鉴�
 
 ## 已验证项
 
+- `secrets.required` 校验生效：无密钥时 `wrangler dev` 明确列出三个缺失项
+- 类型生成覆盖全部 5 项配置（2 明文变量 + 3 密钥）
+- 编译期防漂移检查生效：往 `wrangler.jsonc` 注入一个未声明的变量后，
+  `tsc` 报错并在信息中点出该变量名
+- `wrangler.jsonc` 的 `secrets.required`、`.dev.vars.example` 的键、
+  `package.json` 的 `cloudflare.bindings` 三处名单一致，无遗漏无多余
+- 克隆到干净目录后 `npm install` → `tsc` → `wrangler deploy --dry-run` 全部通过
 - 15 个工具全部注册，参数数量与文档逐一核对一致
 - MCP `initialize` / `tools/list` / `tools/call` 全部正常
 - 签名实现与 PHP `hash_hmac('sha512', ...)` 等价（3 组用例，含非 ASCII 密钥）

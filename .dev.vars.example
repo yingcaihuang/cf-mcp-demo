@@ -1,8 +1,21 @@
-# 本地开发用密钥。复制为 .dev.vars 后填入真实值（.dev.vars 已被 .gitignore 忽略）。
-# 生产环境请改用：npx wrangler secret put RACORE_ACCESS_KEY
-RACORE_ACCESS_KEY="your-access-key"
-RACORE_SECRET_KEY="your-secret-key"
+# ───────────────────────────────────────────────────────────────────────
+# 密钥模板（dotenv 格式）
+#
+# 这个文件有两个用途：
+#   1. 本地开发：复制为 .dev.vars 后填入真实值（.dev.vars 已被 .gitignore 忽略）
+#   2. 部署向导：「Deploy to Cloudflare」按钮会读取本文件的键名，
+#      在部署页面逐项提示填写，填入的值加密存储为 Worker Secret
+#
+# 只能放占位符，绝对不要把真实密钥提交进版本库。
+# 各项的说明文字在 package.json 的 cloudflare.bindings 中维护。
+# ───────────────────────────────────────────────────────────────────────
 
-# 可选：覆盖 wrangler.jsonc 里的默认值
-# RACORE_API_BASE_URL="https://api.racorecloud.com"
-# RACORE_SIGNATURE_TIMESTAMP_MODE="rfc1123"
+# Racore 控制台获取的 access_key
+RACORE_ACCESS_KEY=
+
+# Racore 控制台获取的 secret_key，用于计算 HMAC-SHA512 签名
+RACORE_SECRET_KEY=
+
+# 保护 /mcp 端点的访问令牌。用 `openssl rand -hex 32` 生成一个随机值。
+# 不设置就等于把账号的 CDN 统计数据公开暴露给任何知道 URL 的人。
+MCP_AUTH_TOKEN=
