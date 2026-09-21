@@ -1,6 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "racore-cdn-mcp-server",
+  // 必须与 Cloudflare 上实际的 Worker 名称一致。Workers Builds 连接构建时
+  // 以 CI 侧的 Worker 名为准，不一致会告警并覆盖，还会导致本地
+  // `wrangler secret put` 把密钥写到另一个 Worker 上。
+  "name": "cf-mcp-demo",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-21",
   "compatibility_flags": ["nodejs_compat"],

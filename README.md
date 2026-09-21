@@ -142,8 +142,26 @@ npx wrangler secret put RACORE_SECRET_KEY
 npm run deploy
 ```
 
-若密钥没配齐，`wrangler deploy` 会因 `secrets.required` 校验而失败并列出缺失项，
-不会部署出一个运行时才报错的版本。
+### 密钥必须先于部署存在
+
+`secrets.required` 会让 `wrangler deploy` 在密钥未配置时直接失败并列出缺失项，
+不会部署出一个运行时才报 401 的版本：
+
+```
+✘ [ERROR] The following required secrets have not been set: RACORE_ACCESS_KEY, RACORE_SECRET_KEY
+```
+
+密钥是挂在 **Worker** 上的，与代码部署相互独立，配置一次即在后续所有部署中保留。
+用 Workers Builds（git 推送触发构建）时，先用上面的 `wrangler secret put`
+或在控制台 **Worker → Settings → Variables and Secrets** 添加，再重新触发构建。
+
+> ⚠️ `wrangler.jsonc` 的 `name` 必须与 Cloudflare 上实际的 Worker 名称一致。
+> 不一致时 Workers Builds 会以 CI 侧的名字为准并告警，而本地
+> `wrangler secret put` 用的是配置里的名字 —— 结果是密钥写到了另一个 Worker 上，
+> 构建仍然报缺失密钥。
+>
+> 注意 `wrangler deploy --dry-run` **检查不到**密钥缺失：它是离线的，
+> 无法得知远端 Worker 上已配置哪些密钥。
 
 部署后访问 `https://<your-worker>.workers.dev/health` 确认，
 其中 `credentials_configured` 应为 `true`。
