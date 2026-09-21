@@ -165,6 +165,17 @@ npm run dev
 （约 600 KB），不进版本库，由 `postinstall` 自动重建。改过 `wrangler.jsonc` 的
 `vars` / 绑定之后，手动跑一次 `npm run cf-typegen` 刷新。
 
+### Node 版本
+
+**必须 Node 22 或更高**。wrangler、miniflare、`@cloudflare/kv-asset-handler` 都声明了
+`>=22.0.0`，wrangler 在启动时会硬性检查并直接退出。`.nvmrc` 固定为 `24`，
+与开发环境保持一致，同时满足 `@babel/core`（`^22.18.0 || >=24.11.0`）等传递依赖，
+避免 `npm install` 时出现一堆 EBADENGINE 警告。
+
+Cloudflare Workers Builds 会读取 `.nvmrc` 决定构建环境的 Node 版本。
+若构建日志里出现 `Wrangler requires at least Node.js v22.0.0`，检查这个文件；
+也可以在 Workers Builds 的构建设置里用 `NODE_VERSION` 环境变量覆盖。
+
 常用脚本：
 
 | 命令 | 作用 |
